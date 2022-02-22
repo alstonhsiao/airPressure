@@ -1,0 +1,228 @@
+
+/* this project is for weMos D1
+ *  analog pin is A0
+ *  i find 0 psi is analog 89 
+ *  102psi is analog 605
+ *  5V reduce 3V usign R180+R330
+ *  
+ * 完成的版本要加上 省Wi-Fi流量
+ */
+
+
+// ----------LIBRARIES--------------
+#include <ESP8266WiFi.h>
+#include <WiFiClientSecure.h>
+#include <movingAvg.h>
+
+//========================================
+// --------CONSTANTS (won't change)---------------
+
+const int pressurePin = A0;   
+
+movingAvg runMovingAvgPresure(20); //滾動式平均 每20個數據平均一次
+int pressureMovingAvg;
+int previousMovingAvg;
+
+
+
+//========================================
+//------------ VARIABLES (will change)---------------------
+
+unsigned long presure = 0;
+unsigned long currentMillis = 0;    // stores the value of millis() in each iteration of loop()
+unsigned long previousPresureMillis = 0;
+unsigned long presureInterval = 1000; //1000=1s 每秒抓一次數據
+unsigned long previousSendGoogle = 0;
+unsigned long sendGoogleInterval = 60000;//1000=1s 每1分鐘送一次數據到Google
+unsigned long forceGoogleInterval= 1800000; //30 min 每30分鐘強制送資料
+
+
+int pressureRowData=0;
+int pressureToPSI=0;
+
+
+//========================================
+//only happend once on void setup()
+
+// --------Setup wifi data subroutine ---------------(only happend once on void setup()
+
+char _lwifi_ssid[] = "Standtools_office";//wifi SSID
+char _lwifi_pass[] = "12345678"; //wifi password
+
+void setupWifiSetting() {
+ WiFi.begin(_lwifi_ssid, _lwifi_pass);
+ while (WiFi.status() != WL_CONNECTED) { delay(500); }
+ delay(300);
+}
+
+const char* asId="AKfycbyR-Yp-uu4nIvnjvnkILaQ5AX8yFxp-UpBO-Sqs0su3ai1N_BvQsz_Q";//don't change it
+String sheetId="";
+String sheetTag="";
+
+
+// --------google sheet data subroutine--------------- only happen once on void Setup()
+
+
+void setupGoogleSheetSetting() {
+ sheetId="11uiCoNE0y5-pEqA26k_5unUDaY8NhDbZnYxmQXVZQCs"; //google sheet ID
+ sheetTag=URLEncode("airPresure"); //google sheet tag
+ sendToGoogleSheets("0",URLEncode((String() + "Date&Time" + "," + "Pressure(PSI)").c_str())); //send table setting
+ delay(1000);
+}
+
+
+// --------Setup movingAvg subroutine--------------- only happen once on void Setup()
+
+void setupMovingAvg(){
+  runMovingAvgPresure.begin();// start the runMovingAvgPresure        
+}
+
+
+void setupBoard(){
+  pinMode(pressurePin,INPUT);// 初始化 IO
+  Serial.begin(9600);  // 啟動Serial 
+  delay(1000);
+  Serial.println("");
+  Serial.println("program start");
+     
+ }
+
+ 
+
+
+
+//========================================
+// --------usually happen on void Loop()--------------- 
+
+
+void sendToGoogleSheets(const String& dateInclude,const String& data) //warring: this subrotuing, don't do anything below
+{
+ static WiFiClientSecure sheetClient;
+ sheetClient.setInsecure();
+ const char* host="script.google.com";
+ if (sheetClient.connect(host, 443)) {
+ const String url = String() +"https://"+host+"/macros/s/"+asId+"/exec?type=insert&dateInclude="+dateInclude+"&sheetId="+sheetId+"&sheetTag="+sheetTag+"&data="+data;
+ sheetClient.println("GET " + url + " HTTP/1.1");
+ sheetClient.println(String()+"Host: "+host);
+ sheetClient.println("Accept: */*");
+ sheetClient.println("Connection: close");
+ sheetClient.println();
+ sheetClient.println();
+ sheetClient.stop();
+ }
+}
+
+
+void writeGoogleSheet() { //only need to change the sending data below
+ sendToGoogleSheets("1",URLEncode((String() + pressureMovingAvg).c_str())); //sending presure data to google sheet with time stamp(google)
+}
+
+String URLEncode(const char* msg)
+{
+ const char *hex = "0123456789abcdef";
+ String encodedMsg = "";
+ while (*msg!='\0'){
+ if( ('a' <= *msg && *msg <= 'z')
+ || ('A' <= *msg && *msg <= 'Z')
+ || ('0' <= *msg && *msg <= '9') ) {
+ encodedMsg += *msg;
+ } else {
+ encodedMsg += '%';
+ encodedMsg += hex[*msg >> 4];
+ encodedMsg += hex[*msg & 15];
+ }
+ msg++;
+ }
+ return encodedMsg;
+}
+
+
+
+
+// -------- subroutines (function)---------------
+
+//========================================
+void getPresureData(){
+  
+  if(currentMillis-previousPresureMillis >= presureInterval){
+    pressureRowData=analogRead(pressurePin);
+    delay(500);
+    previousPresureMillis=currentMillis;
+    
+    pressureToPSI = map(pressureRowData, 89, 605, 0, 102);  //将变量rowData数值从 0 － 1023 区 用 rowData 165=  0 & rowData 957=86 间映射
+    Serial.print("pressureRowData:");
+    Serial.println(pressureRowData);
+    Serial.print("PSI:");
+    Serial.println(pressureToPSI);
+    
+    pressureMovingAvg = runMovingAvgPresure.reading(pressureToPSI);      
+    Serial.print("movingAvg:");
+    Serial.println(pressureMovingAvg);
+    
+    Serial.println("+++++++++++++++++++++");
+
+    
+  }
+  
+}
+
+
+
+//========================================
+void presureSendGoogleSheet(){
+  if(currentMillis-previousSendGoogle >= sendGoogleInterval && previousMovingAvg!=pressureMovingAvg){
+    Serial.println("sending Google sheet;");
+    writeGoogleSheet();
+    previousMovingAvg=pressureMovingAvg;
+    Serial.println("done!");
+    previousSendGoogle=currentMillis;    
+ }
+ 
+}
+
+//========================================
+void forceSendingGoogleSheet(){
+  if(currentMillis-previousSendGoogle >= forceGoogleInterval){
+    Serial.println("force sending Google sheet;");
+    writeGoogleSheet();
+    Serial.println("done!");
+    previousSendGoogle=currentMillis;    
+ }
+ 
+}
+
+
+// -------- arduino main routine (function)---------------
+//========================================
+
+void setup()
+{
+ setupWifiSetting();
+ setupGoogleSheetSetting();
+ setupMovingAvg();
+ setupBoard();
+ 
+}
+
+
+//========================================
+
+void loop()
+{
+  
+
+      // Notice that none of the action happens in loop() apart from reading millis()
+      //   it just calls the functions that have the action code
+
+  currentMillis = millis();   // capture the latest value of millis()
+                              //   this is equivalent to noting the time from a clock
+                              //   use the same time for all LED flashes to keep them synchronized
+  getPresureData();//取得sensor資料並做movingAvg
+  presureSendGoogleSheet();//固定間隔上傳movingAvg到Google Sheet && 數據不同才上傳
+  forceSendingGoogleSheet();//如果長時間movingAvg 都一樣 每半小時上傳一次
+ 
+
+      
+  delay(0); // feed watch dog
+
+}
