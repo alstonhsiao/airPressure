@@ -1,8 +1,9 @@
 
 /* this project is for weMos D1
  *  analog pin is A0
- *  i find 0 psi is analog 165 
- *  86psi is analog 950
+ *  i find 0 psi is analog 89 
+ *  102psi is analog 605
+ *  5V reduce 3V usign R180+R330
  */
 
 
@@ -13,9 +14,6 @@
 
 //========================================
 // --------CONSTANTS (won't change)---------------
-
-
-//const int onBoardLedPin =  13;      // the pin numbers for the LEDs
 
 const int pressurePin = A0;   
 
@@ -63,7 +61,7 @@ String sheetTag="";
 void setupGoogleSheetSetting() {
  sheetId="11uiCoNE0y5-pEqA26k_5unUDaY8NhDbZnYxmQXVZQCs"; //google sheet ID
  sheetTag=URLEncode("airPresure"); //google sheet tag
- sendToGoogleSheets("0",URLEncode((String() + "Time&Date" + "," + "Presure").c_str())); //send table setting
+ sendToGoogleSheets("0",URLEncode((String() + "Date&Time" + "," + "Pressure(PSI)").c_str())); //send table setting
  delay(1000);
 }
 
@@ -146,13 +144,13 @@ void getPresureData(){
     delay(500);
     previousPresureMillis=currentMillis;
     
-    pressureToPSI = map(pressureRowData, 165, 957, 0, 86);  //将变量rowData数值从 0 － 1023 区 用 rowData 165=  0 & rowData 957=86 间映射
+    pressureToPSI = map(pressureRowData, 89, 605, 0, 102);  //将变量rowData数值从 0 － 1023 区 用 rowData 165=  0 & rowData 957=86 间映射
     Serial.print("pressureRowData:");
     Serial.println(pressureRowData);
     Serial.print("PSI:");
     Serial.println(pressureToPSI);
     
-    presureMovingAvg = runMovingAvgPresure.reading(pressureRowData);      
+    presureMovingAvg = runMovingAvgPresure.reading(pressureToPSI);      
     Serial.print("movingAvg:");
     Serial.println(presureMovingAvg);
     
@@ -187,10 +185,7 @@ void setup()
  setupGoogleSheetSetting();
  setupMovingAvg();
  setupBoard();
-   
-    
  
-
 }
 
 
@@ -213,4 +208,3 @@ void loop()
   delay(0); // feed watch dog
 
 }
-
